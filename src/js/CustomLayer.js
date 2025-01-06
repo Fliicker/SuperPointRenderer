@@ -1,42 +1,19 @@
 import mapboxgl from "mapbox-gl";
+import vertexShaderSource from "/shader/vertexShader.glsl?raw";
+import fragmentShaderSource from "/shader/fragmentShader.glsl?raw";
 
 export default class CustomLayer {
   id = "highlight";
   type = "custom";
 
   onAdd(map, gl) {
-    const vertexSource = `
-                uniform mat4 u_matrix;
-                attribute vec2 a_pos;
-                void main() {
-                    gl_Position = u_matrix * vec4(a_pos, 0.0, 1.0);
-                }`;
+    let vertexShader = this.createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+    let fragmentShader = this.createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
 
-    // create GLSL source for fragment shader
-    const fragmentSource = `
-                void main() {
-                    gl_FragColor = vec4(1.0, 0.0, 0.0, 0.5);
-                }`;
+    this.program = this.createProgram(gl, vertexShader, fragmentShader);
 
-    // create a vertex shader
-    const vertexShader = gl.createShader(gl.VERTEX_SHADER);
-    gl.shaderSource(vertexShader, vertexSource);
-    gl.compileShader(vertexShader);
+    this.aPos = gl.getUniformLocation(this.program, "a_pos");
 
-    // create a fragment shader
-    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
-    gl.shaderSource(fragmentShader, fragmentSource);
-    gl.compileShader(fragmentShader);
-
-    // link the two shaders into a WebGL program
-    this.program = gl.createProgram();
-    gl.attachShader(this.program, vertexShader);
-    gl.attachShader(this.program, fragmentShader);
-    gl.linkProgram(this.program);
-
-    this.aPos = gl.getAttribLocation(this.program, "a_pos");
-
-    // define vertices of the triangle to be rendered in the custom style layer
     const helsinki = mapboxgl.MercatorCoordinate.fromLngLat({
       lng: 25.004,
       lat: 60.239,
@@ -50,7 +27,6 @@ export default class CustomLayer {
       lat: 50.541,
     });
 
-    // create and initialize a WebGLBuffer to store vertex and color data
     this.buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
     gl.bufferData(
@@ -62,12 +38,43 @@ export default class CustomLayer {
 
   render(gl, matrix) {
     gl.useProgram(this.program);
-    gl.uniformMatrix4fv(gl.getUniformLocation(this.program, "u_matrix"), false, matrix);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
-    gl.enableVertexAttribArray(this.aPos);
-    gl.vertexAttribPointer(this.aPos, 2, gl.FLOAT, false, 0, 0);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    let positionAttributeLocation = gl.getAttribLocation(this.program, "a_position");
+    let matrixLocation = gl.getUniformLocation(this.program, "u_matrix");
+
+    gl.uniformMatrix4fv(matrixLocation, false, matrix);
+    gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 3);
   }
+
+  createShader(gl, type, source) {
+    var shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    var success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+    if (success) {
+      return shader;
+    }
+
+    console.log(gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
+  }
+
+  createProgram(gl, vertexShader, fragmentShader) {
+    let program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    var success = gl.getProgramParameter(program, gl.LINK_STATUS);
+    if (success) {
+      return program;
+    }
+
+    console.log(gl.getProgramInfoLog(program));
+    gl.deleteProgram(program);
+    return null;
+  }
+
 }
